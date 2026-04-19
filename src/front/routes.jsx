@@ -13,6 +13,7 @@ import { Demo } from "./pages/Demo";
 import { Login } from "./pages/Login";
 import { Signup } from "./pages/Signup";
 import { Dashboard } from "./pages/Dashboard";
+import { ProtectedRoute } from "./components/ProtectedRoute"; //
 
 export const router = createBrowserRouter(
     createRoutesFromElements(
@@ -30,7 +31,14 @@ export const router = createBrowserRouter(
         {/* Agregamos las rutas de NutriFit manteniendo el Layout (Navbar/Footer) */}
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
-        <Route path="/dashboard" element={<Dashboard />} />
+       <Route 
+            path="/dashboard" 
+            element={
+                <ProtectedRoute>
+                    <Dashboard />
+                </ProtectedRoute>
+            } 
+        />
 
       </Route>
     )
