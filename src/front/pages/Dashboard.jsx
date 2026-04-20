@@ -3,57 +3,67 @@ import { useNavigate } from "react-router-dom";
 
 export const Dashboard = () => {
     const navigate = useNavigate();
+    
+    // Estados para datos persistentes
     const [water, setWater] = useState(0);
     const [calories, setCalories] = useState(0);
-    const [userId, setUserId] = useState(null);
-    
-    // Estado para los datos del perfil
-    const [stats, setStats] = useState({
-        age: "",
-        height: "",
-        weight: "",
-        dietType: "Equilibrada"
+    const [stats, setStats] = useState({ 
+        age: "", 
+        height: "", 
+        weight: "", 
+        dietType: "Equilibrada" 
+    });
+
+    // Estado para el formulario de consumo diario (Postman style)
+    const [foodEntry, setFoodEntry] = useState({ 
+        food: "", 
+        calories: "", 
+        water: "" 
     });
 
     const token = sessionStorage.getItem("token");
-    const storedUserId = sessionStorage.getItem("user_id"); // Recuperamos el ID guardado en Login
+    const userId = sessionStorage.getItem("user_id");
+    // Asegúrate de que esta URL sea la de tu puerto 3001
     const BACKEND_URL = "https://solid-broccoli-97rj4r4r5p543rgg-3001.app.github.dev";
 
-    useEffect(() => {
-        if (!token) {
-            navigate("/login");
-            return;
-        }
-        setUserId(storedUserId);
-
-        const loadDashboardData = async () => {
-            try {
-                const response = await fetch(`${BACKEND_URL}/api/daily-summary`, {
-                    headers: { "Authorization": `Bearer ${token}` }
-                });
-
-                if (response.ok) {
-                    const data = await response.json();
-                    setWater(data.total_water || 0);
-                    setCalories(data.total_calories || 0);
-                    
-                    // Cargamos lo que ya está en la DB para que no se borre al recargar
-                    setStats({
-                        age: data.age || "",
-                        height: data.height || "",
-                        weight: data.weight || "",
-                        dietType: data.diet_type || "Equilibrada"
-                    });
+    // --- 1. CARGA DE DATOS (GET) ---
+    const loadData = async () => {
+        if (!token) return;
+        try {
+            const response = await fetch(`${BACKEND_URL}/api/daily-summary`, {
+                method: "GET",
+                headers: {
+                    "Authorization": `Bearer ${token}`,
+                    "Content-Type": "application/json"
                 }
-            } catch (error) {
-                console.error("Error al cargar datos:", error);
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                setWater(data.total_water || 0);
+                setCalories(data.total_calories || 0);
+                setStats({
+                    age: data.age || "",
+                    height: data.height || "",
+                    weight: data.weight || "",
+                    dietType: data.diet_type || "Equilibrada"
+                });
+            } else if (response.status === 401) {
+                sessionStorage.clear();
+                navigate("/login");
             }
-        };
+        } catch (error) {
+            console.error("Error cargando datos:", error);
+        }
+    };
 
-        loadDashboardData();
-    }, [token, navigate, storedUserId]);
+    useEffect(() => {
+        if (!token) navigate("/login");
+        else loadData();
+    }, [token]);
 
-    const handleUpdateWeight = async (e) => {
+    // --- 2. GUARDAR PERFIL (PUT) ---
+    const handleUpdateProfile = async (e) => {
         e.preventDefault();
         try {
             const response = await fetch(`${BACKEND_URL}/api/user-profile`, {
@@ -63,22 +73,27 @@ export const Dashboard = () => {
                     "Authorization": `Bearer ${token}`
                 },
                 body: JSON.stringify({
-                    age: parseInt(stats.age),     // Mantiene la edad actual
-                    height: parseFloat(stats.height), // Mantiene la altura actual
-                    weight: parseFloat(stats.weight), // Envía el nuevo peso
-                    diet_type: stats.dietType    // Mantiene la dieta seleccionada
+                    age: parseInt(stats.age),
+                    height: parseFloat(stats.height),
+                    weight: parseFloat(stats.weight),
+                    diet_type: stats.dietType
                 })
             });
 
             if (response.ok) {
-                alert("✅ ¡Peso y perfil actualizados!");
+                alert("✅ ¡Perfil actualizado correctamente!");
+                loadData(); // Recarga para ver reflejado en la barra superior
+            } else {
+                alert("❌ Error al guardar el perfil");
             }
         } catch (error) {
-            alert("Error de red");
+            alert("❌ Error de conexión con el servidor");
         }
     };
 
-    const addWater = async () => {
+    // --- 3. REGISTRAR COMIDA/AGUA (POST) ---
+    const handleAddFood = async (e) => {
+        e.preventDefault();
         try {
             const response = await fetch(`${BACKEND_URL}/api/daily-log`, {
                 method: "POST",
@@ -86,10 +101,21 @@ export const Dashboard = () => {
                     "Content-Type": "application/json",
                     "Authorization": `Bearer ${token}`
                 },
-                body: JSON.stringify({ category: "Agua", food: "Vaso", water: 250, calories: 0 })
+                body: JSON.stringify({
+                    category: "Comida",
+                    food: foodEntry.food,
+                    calories: parseInt(foodEntry.calories || 0),
+                    water: parseInt(foodEntry.water || 0)
+                })
             });
-            if (response.ok) setWater(prev => prev + 250);
-        } catch (error) { console.error("Error"); }
+
+            if (response.ok) {
+                setFoodEntry({ food: "", calories: "", water: "" }); // Limpia formulario
+                loadData(); // Actualiza totales inmediatamente
+            }
+        } catch (error) {
+            console.error("Error al registrar comida:", error);
+        }
     };
 
     const handleLogout = () => {
@@ -98,107 +124,93 @@ export const Dashboard = () => {
     };
 
     return (
-        <div className="container-fluid min-vh-100 p-0" style={{ backgroundColor: "#f8fafc" }}>
-            {/* BARRA SUPERIOR CON ID Y CERRAR SESIÓN */}
-            <nav className="navbar navbar-expand-lg navbar-dark bg-success shadow-sm px-4 mb-4">
-                <div className="container-fluid">
-                    <span className="navbar-brand fw-bold">NutriFit 🍏</span>
-                    <div className="d-flex align-items-center">
-                        <span className="text-white me-3 opacity-75 small">User ID: {userId || "..."}</span>
-                        <button onClick={handleLogout} className="btn btn-sm btn-outline-light rounded-pill px-3">
-                            Cerrar Sesión
-                        </button>
-                    </div>
+        <div className="bg-light min-vh-100">
+            {/* Navbar Bootstrap Verde */}
+            <nav className="navbar navbar-dark bg-success shadow mb-4 px-4">
+                <span className="navbar-brand fw-bold">NutriFit Dashboard 🍏</span>
+                <div className="text-white d-flex align-items-center">
+                    <span className="me-3 small border-end pe-3 border-white border-opacity-25">ID: {userId}</span>
+                    <button onClick={handleLogout} className="btn btn-sm btn-outline-light rounded-pill">Salir</button>
                 </div>
             </nav>
 
             <div className="container">
-                {/* BANNER DE ESTADO ACTUAL */}
-                <div className="row mb-4">
-                    <div className="col-12">
-                        <div className="card shadow-sm border-0 text-white" style={{ background: "linear-gradient(135deg, #198754 0%, #1ea362 100%)", borderRadius: "15px" }}>
-                            <div className="card-body p-4 text-center">
-                                <div className="row">
-                                    <div className="col-md-3 border-end border-white border-opacity-25">
-                                        <p className="small mb-0 opacity-75">PESO REGISTRADO</p>
-                                        <h2 className="fw-bold">{stats.weight || "--"} <small className="fs-6">kg</small></h2>
-                                    </div>
-                                    <div className="col-md-3 border-end border-white border-opacity-25">
-                                        <p className="small mb-0 opacity-75">DIETA</p>
-                                        <h3 className="fw-bold">{stats.dietType}</h3>
-                                    </div>
-                                    <div className="col-md-3 border-end border-white border-opacity-25">
-                                        <p className="small mb-0 opacity-75">ESTATURA</p>
-                                        <h3 className="fw-bold">{stats.height} <small className="fs-6">cm</small></h3>
-                                    </div>
-                                    <div className="col-md-3">
-                                        <p className="small mb-0 opacity-75">EDAD</p>
-                                        <h3 className="fw-bold">{stats.age} <small className="fs-6">años</small></h3>
-                                    </div>
-                                </div>
+                {/* TARJETAS SUPERIORES (RESUMEN) */}
+                <div className="row g-3 mb-4 text-center">
+                    {[
+                        { label: "PESO", val: stats.weight, unit: "kg" },
+                        { label: "ALTURA", val: stats.height, unit: "cm" },
+                        { label: "EDAD", val: stats.age, unit: "años" },
+                        { label: "DIETA", val: stats.dietType, unit: "" }
+                    ].map((item, i) => (
+                        <div key={i} className="col-md-3 col-6">
+                            <div className="card shadow-sm border-0 border-top border-success border-4 py-3 h-100">
+                                <small className="text-muted fw-bold small">{item.label}</small>
+                                <h3 className="fw-bold text-success mb-0">{item.val || "--"} <small className="fs-6">{item.unit}</small></h3>
                             </div>
                         </div>
-                    </div>
+                    ))}
                 </div>
 
                 <div className="row g-4">
-                    {/* COLUMNA DE ACTUALIZACIÓN DE PESO Y DATOS */}
-                    <div className="col-md-4">
-                        <div className="card shadow border-0 p-4" style={{ borderRadius: "15px" }}>
-                            <h5 className="fw-bold mb-3 text-success">Control de Peso</h5>
-                            <form onSubmit={handleUpdateWeight}>
+                    {/* FORMULARIO EDITABLE (IZQUIERDA) */}
+                    <div className="col-md-5">
+                        <div className="card shadow-sm border-0 p-4 h-100">
+                            <h5 className="fw-bold text-success mb-3">Configuración de Perfil</h5>
+                            <form onSubmit={handleUpdateProfile}>
+                                <div className="mb-2">
+                                    <label className="small fw-bold">EDAD</label>
+                                    <input type="number" className="form-control" value={stats.age} onChange={e => setStats({...stats, age: e.target.value})} />
+                                </div>
+                                <div className="mb-2">
+                                    <label className="small fw-bold">ESTATURA (CM)</label>
+                                    <input type="number" className="form-control" value={stats.height} onChange={e => setStats({...stats, height: e.target.value})} />
+                                </div>
                                 <div className="mb-3">
-                                    <label className="small fw-bold text-muted">PESO ACTUAL (KG)</label>
-                                    <input 
-                                        type="number" 
-                                        className="form-control form-control-lg border-success border-opacity-25" 
-                                        value={stats.weight} 
-                                        onChange={e => setStats({...stats, weight: e.target.value})} 
-                                        placeholder="Ej: 75"
-                                    />
-                                    <div className="form-text small">Cambia este valor cada vez que te peses.</div>
-                                </div>
-                                <hr className="my-4 text-muted opacity-25" />
-                                <h6 className="small fw-bold text-muted mb-3">OTROS DATOS</h6>
-                                <div className="mb-2">
-                                    <label className="small text-muted">Edad</label>
-                                    <input type="number" className="form-control form-control-sm" value={stats.age} onChange={e => setStats({...stats, age: e.target.value})} />
-                                </div>
-                                <div className="mb-2">
-                                    <label className="small text-muted">Estatura (cm)</label>
-                                    <input type="number" className="form-control form-control-sm" value={stats.height} onChange={e => setStats({...stats, height: e.target.value})} />
+                                    <label className="small fw-bold">PESO ACTUAL (KG)</label>
+                                    <input type="number" className="form-control border-success border-opacity-50" value={stats.weight} onChange={e => setStats({...stats, weight: e.target.value})} />
                                 </div>
                                 <div className="mb-4">
-                                    <label className="small text-muted">Tipo de Dieta</label>
-                                    <select className="form-select form-select-sm" value={stats.dietType} onChange={e => setStats({...stats, dietType: e.target.value})}>
+                                    <label className="small fw-bold">PLAN NUTRICIONAL</label>
+                                    <select className="form-select" value={stats.dietType} onChange={e => setStats({...stats, dietType: e.target.value})}>
                                         <option value="Equilibrada">Equilibrada</option>
                                         <option value="Vegana">Vegana</option>
                                         <option value="Keto">Keto</option>
                                     </select>
                                 </div>
-                                <button className="btn btn-success w-100 fw-bold shadow-sm py-2">ACTUALIZAR DATOS</button>
+                                <button className="btn btn-success w-100 fw-bold shadow-sm py-2 text-uppercase">Guardar Perfil</button>
                             </form>
                         </div>
                     </div>
 
-                    {/* COLUMNA DE PROGRESO DIARIO */}
-                    <div className="col-md-8">
-                        <div className="card shadow border-0 p-4 text-center h-100" style={{ borderRadius: "15px" }}>
-                            <h5 className="text-muted fw-bold mb-4">Progreso de Hoy</h5>
-                            <div className="row align-items-center h-75">
-                                <div className="col-md-6 border-end">
-                                    <div className="rounded-circle d-inline-flex flex-column justify-content-center align-items-center shadow-sm" 
-                                         style={{ width: "160px", height: "160px", border: "10px solid #198754", backgroundColor: "#f0fff4" }}>
-                                        <span className="small text-muted fw-bold">CALORÍAS</span>
-                                        <h1 className="fw-bold text-success mb-0">{calories}</h1>
-                                    </div>
+                    {/* REGISTRO DE CONSUMO (DERECHA) */}
+                    <div className="col-md-7">
+                        <div className="card shadow-sm border-0 p-4 h-100">
+                            <h5 className="fw-bold text-muted mb-4">Registro Diario (Comida/Agua)</h5>
+                            
+                            <form onSubmit={handleAddFood} className="row g-2 mb-4 p-3 bg-light rounded shadow-sm border border-success border-opacity-10">
+                                <div className="col-md-5">
+                                    <input type="text" className="form-control form-control-sm" placeholder="¿Qué consumiste?" value={foodEntry.food} onChange={e => setFoodEntry({...foodEntry, food: e.target.value})} required />
                                 </div>
-                                <div className="col-md-6">
-                                    <p className="mb-1 small fw-bold text-muted">HIDRATACIÓN</p>
-                                    <h2 className="text-primary fw-bold">{(water/1000).toFixed(2)}L</h2>
-                                    <button onClick={addWater} className="btn btn-primary btn-sm rounded-pill mt-3 px-4 shadow-sm">
-                                        + 250ml de Agua
-                                    </button>
+                                <div className="col-md-3">
+                                    <input type="number" className="form-control form-control-sm" placeholder="Calorías" value={foodEntry.calories} onChange={e => setFoodEntry({...foodEntry, calories: e.target.value})} />
+                                </div>
+                                <div className="col-md-2">
+                                    <input type="number" className="form-control form-control-sm" placeholder="ml agua" value={foodEntry.water} onChange={e => setFoodEntry({...foodEntry, water: e.target.value})} />
+                                </div>
+                                <div className="col-md-2">
+                                    <button className="btn btn-success btn-sm w-100 fw-bold">+</button>
+                                </div>
+                            </form>
+
+                            <div className="row text-center mt-auto p-4 bg-success bg-opacity-10 rounded-4">
+                                <div className="col-6 border-end border-success border-opacity-25">
+                                    <h1 className="fw-bold text-success display-4 mb-0">{calories}</h1>
+                                    <p className="text-muted small fw-bold mb-0">CALORÍAS TOTALES</p>
+                                </div>
+                                <div className="col-6">
+                                    <h1 className="fw-bold text-primary display-4 mb-0">{(water/1000).toFixed(2)}L</h1>
+                                    <p className="text-muted small fw-bold mb-0">AGUA CONSUMIDA</p>
                                 </div>
                             </div>
                         </div>
